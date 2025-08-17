@@ -48,7 +48,7 @@ def _scaled_grouped_mm(
     """
     # TODO: Remove logging once prototype is more mature. This is currently very useful for development and debugging.
     if scaling_type == MoEScalingType.FP8_ROWWISE:
-        # print("Using fp8 rowwise scaled_grouped_mm")
+        print("Using fp8 rowwise scaled_grouped_mm")
         return _Float8GroupedMM.apply(
             A,
             B_t,
