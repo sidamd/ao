@@ -27,6 +27,7 @@ Custom QAT APIs
     FakeQuantizeConfigBase
     IntxFakeQuantizeConfig
     Float8FakeQuantizeConfig
+    NVFP4FakeQuantizeConfig
     FakeQuantizedLinear
     FakeQuantizedEmbedding
     FakeQuantizerBase
