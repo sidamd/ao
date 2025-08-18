@@ -34,6 +34,7 @@ from .fake_quantize_config import (
     FakeQuantizeConfigBase,
     Float8FakeQuantizeConfig,
     IntxFakeQuantizeConfig,
+    NVFP4FakeQuantizeConfig,
 )
 from .utils import (
     _fake_quantize_per_channel_group,
@@ -59,8 +60,10 @@ class FakeQuantizerBase(torch.nn.Module):
     def from_config(config: FakeQuantizeConfigBase) -> "FakeQuantizerBase":
         if isinstance(config, IntxFakeQuantizeConfig):
             return IntxFakeQuantizer(config)
-        if isinstance(config, Float8FakeQuantizeConfig):
+        elif isinstance(config, Float8FakeQuantizeConfig):
             return Float8FakeQuantizer(config)
+        elif isinstance(config, NVFP4FakeQuantizeConfig):
+            return NVFP4FakeQuantizer(config)
         else:
             raise ValueError(f"Unknown config type: {config}")
 
@@ -73,6 +76,7 @@ class Float8FakeQuantizer(FakeQuantizerBase):
     def __init__(self, config: Float8FakeQuantizeConfig):
         super().__init__()
         self.config = config
+        torch._C._log_api_usage_once("torchao.quantization.qat.Float8FakeQuantizer")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         original_dtype = x.dtype
@@ -91,6 +95,52 @@ class Float8FakeQuantizer(FakeQuantizerBase):
         return dq
 
 
+class NVFP4FakeQuantizer(FakeQuantizerBase):
+    """
+    Generic module for applying NVFP4 fake quantization to a tensor, as specified in the config.
+    """
+
+    def __init__(self, config: NVFP4FakeQuantizeConfig):
+        super().__init__()
+        torch._C._log_api_usage_once("torchao.quantization.qat.NVFP4FakeQuantizer")
+        self.config = config
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        from torchao.prototype.mx_formats.nvfp4_tensor import (
+            _nvfp4_quantize,
+            per_tensor_amax_to_scale,
+        )
+
+        block_size = 16
+        original_shape = x.shape
+        if x.dim() == 3:
+            x = x.view(-1, x.shape[-1])
+        if self.config.use_per_tensor_scale:
+            tensor_amax = torch.max(torch.abs(x))
+            per_tensor_scale = per_tensor_amax_to_scale(tensor_amax)
+        else:
+            per_tensor_scale = None
+
+        # quantize
+        scale, q = _nvfp4_quantize(
+            x,
+            block_size=block_size,
+            per_tensor_scale=per_tensor_scale,
+            skip_dtype_cast_and_packing=True,
+        )
+        if self.config.use_per_tensor_scale:
+            scale = scale * per_tensor_scale
+        assert q.dtype == x.dtype
+        assert scale.dtype == torch.float32
+
+        # dequantize
+        M, K = q.shape[0], q.shape[1]
+        q = q.view(M, K // block_size, block_size)
+        scale = scale.view(M, K // block_size, 1)
+        dq = q * scale
+        return dq.view(original_shape).to(x.dtype)
+
+
 class IntxFakeQuantizer(FakeQuantizerBase):
     """
     Generic module for applying integer fake quantization to a tensor, as specified in the config.
@@ -98,7 +148,7 @@ class IntxFakeQuantizer(FakeQuantizerBase):
 
     def __init__(self, config: IntxFakeQuantizeConfig):
         super().__init__()
-        torch._C._log_api_usage_once("torchao.quantization.qat.FakeQuantizer")
+        torch._C._log_api_usage_once("torchao.quantization.qat.IntxFakeQuantizer")
         self.config = config
         self.enabled = True
         self.scale: Optional[torch.Tensor] = None
