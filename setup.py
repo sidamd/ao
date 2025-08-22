@@ -516,8 +516,8 @@ def get_extensions():
         # Add ROCm GPU architecture check
         gpu_arch = None
         if torch.cuda.is_available():
-            gpu_arch = torch.cuda.get_device_properties(0).name
-        if gpu_arch and gpu_arch != "gfx942":
+            gpu_arch = torch.cuda.get_device_properties(0).gfxArchName.split(":")[0]
+        if "gfx942" not in gpu_arch: 
             print(f"Warning: Unsupported ROCm GPU architecture: {gpu_arch}")
             print("Currently only gfx942 is supported. Compiling only for gfx942.")
         extra_compile_args["nvcc"].append("--offload-arch=gfx942")
